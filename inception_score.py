@@ -36,12 +36,12 @@ def inception_score(imgs, cuda=True, batch_size=32, resize=False, splits=1):
     # Load inception model
     inception_model = inception_v3(pretrained=True, transform_input=False).type(dtype)
     inception_model.eval();
-    up = nn.Upsample(size=(299, 299), mode='bilinear').type(dtype)
+    up = nn.Upsample(size=(299, 299), mode='bilinear',align_corners=True).type(dtype)
     def get_pred(x):
         if resize:
             x = up(x)
         x = inception_model(x)
-        return F.softmax(x).data.cpu().numpy()
+        return F.softmax(x,dim=1).data.cpu().numpy()
 
     # Get predictions
     preds = np.zeros((N, 1000))
@@ -68,28 +68,64 @@ def inception_score(imgs, cuda=True, batch_size=32, resize=False, splits=1):
     return np.mean(split_scores), np.std(split_scores)
 
 if __name__ == '__main__':
-    class IgnoreLabelDataset(torch.utils.data.Dataset):
-        def __init__(self, orig):
-            self.orig = orig
+    # class IgnoreLabelDataset(torch.utils.data.Dataset):
+    #     def __init__(self, orig):
+    #         self.orig = orig
 
-        def __getitem__(self, index):
-            return self.orig[index][0]
+    #     def __getitem__(self, index):
+    #         return self.orig[index][0]
 
-        def __len__(self):
-            return len(self.orig)
+    #     def __len__(self):
+    #         return len(self.orig)
 
-    import torchvision.datasets as dset
+    # import torchvision.datasets as dset
+    # import torchvision.transforms as transforms
+
+    # cifar = dset.CIFAR10(root='data/', download=True,
+    #                          transform=transforms.Compose([
+    #                              transforms.Scale(32),
+    #                              transforms.ToTensor(),
+    #                              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    #                          ])
+    # )
+
+    # IgnoreLabelDataset(cifar)
+
+    # print ("Calculating Inception Score...")
+    # print (inception_score(IgnoreLabelDataset(cifar), cuda=True, batch_size=32, resize=True, splits=10))
+
+    import glob
+    import random
+    import os
+    import numpy as np
+
+    from PIL import Image
     import torchvision.transforms as transforms
 
-    cifar = dset.CIFAR10(root='data/', download=True,
-                             transform=transforms.Compose([
-                                 transforms.Scale(32),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-                             ])
-    )
+    class myDataset(Dataset):
+        def __init__(self, root):
+            self.transform = transforms.Compose([
+                transforms.Resize((256, 256), Image.BICUBIC),
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+            ])
 
-    IgnoreLabelDataset(cifar)
+            self.files = sorted(glob.glob(os.path.join(root) + "/*.jpg"))
+
+        def __getitem__(self, index):
+            img = Image.open(self.files[index % len(self.files)]).convert('RGB')      
+            item_image = self.transform(img)
+            return item_image
+
+        def __len__(self):
+            return len(self.files)
+
+
+
+    path="/"
+    cuda = True if torch.cuda.is_available() else False
+
 
     print ("Calculating Inception Score...")
-    print (inception_score(IgnoreLabelDataset(cifar), cuda=True, batch_size=32, resize=True, splits=10))
+    print (inception_score(myDataset(path), cuda=cuda, batch_size=8, resize=True, splits=10))
+
